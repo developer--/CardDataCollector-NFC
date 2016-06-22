@@ -2,12 +2,15 @@ package awesome.com.cardreader;
 
 import android.app.Activity;
 import android.app.PendingIntent;
+import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.nfc.NfcAdapter;
 import android.nfc.Tag;
+import android.nfc.tech.IsoDep;
 import android.nfc.tech.Ndef;
 import android.os.Bundle;
+import android.support.v7.app.AlertDialog;
 import android.support.v7.app.AppCompatActivity;
 import android.util.Log;
 import android.widget.TextView;
@@ -16,148 +19,109 @@ import android.widget.Toast;
 import awesome.com.cardreader.async.NdefReaderTask;
 import butterknife.Bind;
 import butterknife.ButterKnife;
+import io.triangle.reader.PaymentCard;
+import io.triangle.reader.TapProcessor;
 
 public class MainActivity extends AppCompatActivity{
 
-    private static final String MIME_TEXT_PLAIN = "text/plain";
-
-    @Bind(R.id.text_view_id_1)
-    protected TextView txtType;
-    @Bind(R.id.text_view_id_2)
-    protected TextView txtSize;
-    @Bind(R.id.text_view_id_3)
-    protected TextView txtWrite;
-    @Bind(R.id.text_view_id_4)
-    protected TextView txtRead;
-
-    private static final String TAG = "NfcDemo";
-
-    private NfcAdapter mNfcAdapter;
+    /**
+     * Adapter used to grab NFC information from the sensor.
+     */
+    NfcAdapter nfcAdapter;
 
     @Override
-    protected void onCreate(Bundle savedInstanceState) {
+    protected void onCreate(Bundle savedInstanceState)
+    {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
-
-        ButterKnife.bind(this);
-
-
-        mNfcAdapter = NfcAdapter.getDefaultAdapter(this);
-
-        if (mNfcAdapter == null) {
-            // Stop here, we definitely need NFC
-            Toast.makeText(this, "This device doesn't support NFC.", Toast.LENGTH_LONG).show();
-            finish();
-            return;
-
-        }
-
-        if (!mNfcAdapter.isEnabled()) {
-            txtRead.setText("NFC is disabled.");
-        } else {
-            txtRead.setText("asfasdf");
-        }
-
-        handleIntent(getIntent());
+        // Grab a hold of the nfc sensor
+        this.nfcAdapter = NfcAdapter.getDefaultAdapter(this);
     }
 
-
-
-
     @Override
-    protected void onResume() {
+    protected void onResume()
+    {
         super.onResume();
 
-        /**
-         * It's important, that the activity is in the foreground (resumed). Otherwise
-         * an IllegalStateException is thrown.
-         */
-        setupForegroundDispatch(this, mNfcAdapter);
+        if (this.nfcAdapter != null)
+        {
+            this.ensureSensorIsOn();
+
+            // We'd like to listen to all incoming NFC tags that support the IsoDep interface
+            nfcAdapter.enableForegroundDispatch(this,
+                    PendingIntent.getActivity(this, 0, new Intent(this, getClass()).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP), 0),
+                    new IntentFilter[] { new IntentFilter(NfcAdapter.ACTION_TECH_DISCOVERED) },
+                    new String[][] { new String[] { IsoDep.class.getName() }});
+        }
     }
 
     @Override
-    protected void onPause() {
-        /**
-         * Call this before onPause, otherwise an IllegalArgumentException is thrown as well.
-         */
-        stopForegroundDispatch(this, mNfcAdapter);
-
+    protected void onPause()
+    {
         super.onPause();
+
+        if (this.nfcAdapter != null)
+        {
+            this.nfcAdapter.disableForegroundDispatch(this);
+        }
     }
 
     @Override
-    protected void onNewIntent(Intent intent) {
-        /**
-         * This method gets called, when a new Intent gets associated with the current activity instance.
-         * Instead of creating a new activity, onNewIntent will be called. For more information have a look
-         * at the documentation.
-         *
-         * In our case this method gets called, when the user attaches a Tag to the device.
-         */
-        handleIntent(intent);
-    }
+    protected void onNewIntent(Intent intent)
+    {
+        super.onNewIntent(intent);
 
-    private void handleIntent(Intent intent) {
-        String action = intent.getAction();
-        if (NfcAdapter.ACTION_NDEF_DISCOVERED.equals(action)) {
-
-            String type = intent.getType();
-            if (MIME_TEXT_PLAIN.equals(type)) {
-
-                Tag tag = intent.getParcelableExtra(NfcAdapter.EXTRA_TAG);
-                new NdefReaderTask().execute(tag);
-
-            } else {
-                Log.d(TAG, "Wrong mime type: " + type);
-            }
-        } else if (NfcAdapter.ACTION_TECH_DISCOVERED.equals(action)) {
-
-            // In case we would still use the Tech Discovered Intent
+        // Is the intent for a new NFC tag discovery?
+        if (intent != null && intent.getAction() == NfcAdapter.ACTION_TECH_DISCOVERED)
+        {
             Tag tag = intent.getParcelableExtra(NfcAdapter.EXTRA_TAG);
-            String[] techList = tag.getTechList();
-            String searchedTech = Ndef.class.getName();
+            IsoDep isoDep = IsoDep.get(tag);
 
-            for (String tech : techList) {
-                if (searchedTech.equals(tech)) {
-                    new NdefReaderTask().execute(tag);
-                    break;
-                }
+            // Does the tag support the IsoDep interface?
+            if (isoDep == null)
+            {
+                return;
             }
+
+            TapProcessor tapProcessor = new TapProcessor(MainActivity.this);
+            tapProcessor.processIntent(intent);
         }
     }
 
-    /**
-     * @param activity The corresponding {@link Activity} requesting the foreground dispatch.
-     * @param adapter The {@link NfcAdapter} used for the foreground dispatch.
-     */
-    private static void setupForegroundDispatch(final Activity activity, NfcAdapter adapter) {
-        final Intent intent = new Intent(activity.getApplicationContext(), activity.getClass());
-        intent.setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
-
-        final PendingIntent pendingIntent = PendingIntent.getActivity(activity.getApplicationContext(), 0, intent, 0);
-
-        IntentFilter[] filters = new IntentFilter[1];
-        String[][] techList = new String[][]{};
-
-        // Notice that this is the same filter as in our manifest.
-        filters[0] = new IntentFilter();
-        filters[0].addAction(NfcAdapter.ACTION_NDEF_DISCOVERED);
-        filters[0].addCategory(Intent.CATEGORY_DEFAULT);
-        try {
-            filters[0].addDataType(MIME_TEXT_PLAIN);
-        } catch (IntentFilter.MalformedMimeTypeException e) {
-            throw new RuntimeException("Check your mime type.");
+    private void ensureSensorIsOn()
+    {
+        if(!this.nfcAdapter.isEnabled())
+        {
+            // Alert the user that NFC is off
+            new AlertDialog.Builder(this)
+                    .setTitle("NFC Sensor Turned Off")
+                    .setMessage("In order to use this application, the NFC sensor must be turned on. Do you wish to turn it on?")
+                    .setPositiveButton("Go to Settings", new DialogInterface.OnClickListener()
+                    {
+                        @Override
+                        public void onClick(DialogInterface dialogInterface, int i)
+                        {
+                            // Send the user to the settings page and hope they turn it on
+                            if (android.os.Build.VERSION.SDK_INT >= 16)
+                            {
+                                startActivity(new Intent(android.provider.Settings.ACTION_NFC_SETTINGS));
+                            }
+                            else
+                            {
+                                startActivity(new Intent(android.provider.Settings.ACTION_WIRELESS_SETTINGS));
+                            }
+                        }
+                    })
+                    .setNegativeButton("Do Nothing", new DialogInterface.OnClickListener()
+                    {
+                        @Override
+                        public void onClick(DialogInterface dialogInterface, int i)
+                        {
+                            // Do nothing
+                        }
+                    })
+                    .show();
         }
-
-        adapter.enableForegroundDispatch(activity, pendingIntent, filters, techList);
-    }
-
-    /**
-     * @param activity The corresponding {@link AppCompatActivity} requesting to stop the foreground dispatch.
-     * @param adapter The {@link NfcAdapter} used for the foreground dispatch.
-     */
-    public static void stopForegroundDispatch(final Activity activity, NfcAdapter adapter) {
-        adapter.disableForegroundDispatch(activity);
     }
 
 

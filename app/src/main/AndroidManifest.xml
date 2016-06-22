@@ -16,7 +16,7 @@
 
 
 
-        <activity android:name=".ECCardInfosActivity"
+        <activity android:name=".MainActivity"
             android:clearTaskOnLaunch="true" android:alwaysRetainTaskState="true" android:finishOnTaskLaunch="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

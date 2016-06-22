@@ -25,6 +25,8 @@ dependencies {
     compile 'com.android.support.constraint:constraint-layout:1.0.0-alpha3'
     compile 'com.jakewharton:butterknife:7.0.1'
 
+    compile files('libs/triangle.io-1.0.9.jar')
+
 
     testCompile 'junit:junit:4.12'
     androidTestCompile 'com.android.support.test.espresso:espresso-core:2.2.2'
